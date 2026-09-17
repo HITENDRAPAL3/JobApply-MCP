@@ -1,0 +1,36 @@
+{
+  "name": "job-applier-mcp",
+  "version": "1.0.0",
+  "description": "Antigravity MCP server for automated job applications with human-in-the-loop safety gating",
+  "main": "build/index.js",
+  "type": "module",
+  "bin": {
+    "job-applier-mcp": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "keywords": [
+    "mcp",
+    "antigravity",
+    "playwright",
+    "job-application",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "pdf-parse": "^1.1.1",
+    "playwright": "^1.50.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@types/pdf-parse": "^1.1.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
