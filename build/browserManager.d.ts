@@ -6,7 +6,9 @@ export declare class BrowserManager {
     private screenshotsDir;
     constructor();
     /**
-     * Launches Chromium in visible (headful) mode by default so user can monitor.
+     * Launches Google Chrome on the user's desktop in visible (headful) mode with a persistent
+     * user profile directory (.chrome_profile). This preserves cookies, active sessions, and
+     * saved passwords across applications without interfering with other windows.
      */
     launch(headless?: boolean): Promise<void>;
     /**
@@ -33,6 +35,15 @@ export declare class BrowserManager {
     fillFields(mappings: FieldMapping[], resumeFilePath?: string): Promise<{
         results: FillResult[];
         resumeUploaded: boolean;
+    }>;
+    /**
+     * Clicks 'Save and Continue', 'Next', or 'Continue' buttons to advance multi-step wizard.
+     */
+    advanceStep(): Promise<{
+        success: boolean;
+        currentUrl: string;
+        stepTitle?: string;
+        message: string;
     }>;
     /**
      * Captures a screenshot and provides a comprehensive inspection summary.

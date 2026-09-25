@@ -123,6 +123,14 @@ const TOOLS = [
         }
     },
     {
+        name: 'advance_step',
+        description: 'Clicks "Save and Continue", "Next", or "Continue" button to move to the next step of an ATS application wizard.',
+        inputSchema: {
+            type: 'object',
+            properties: {}
+        }
+    },
+    {
         name: 'close_browser',
         description: 'Closes the browser session and frees resources.',
         inputSchema: {
@@ -225,6 +233,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                         {
                             type: 'text',
                             text: JSON.stringify(outcome, null, 2)
+                        }
+                    ]
+                };
+            }
+            case 'advance_step': {
+                const stepOutcome = await browserManager.advanceStep();
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(stepOutcome, null, 2)
                         }
                     ]
                 };

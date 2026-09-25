@@ -9,10 +9,13 @@ import type { ParsedResume } from './types.js';
 const COMMON_SKILLS = [
   'javascript', 'typescript', 'python', 'java', 'c++', 'c#', 'go', 'rust', 'ruby', 'php',
   'react', 'react native', 'angular', 'vue', 'next.js', 'node.js', 'express', 'spring boot',
-  'html', 'css', 'tailwind', 'sass', 'redux', 'graphql', 'rest api', 'sql', 'mysql', 'postgresql',
-  'mongodb', 'redis', 'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'ci/cd', 'git', 'github',
-  'agile', 'scrum', 'jira', 'microservices', 'distributed systems', 'playwright', 'puppeteer',
-  'selenium', 'jest', 'cypress', 'linux', 'data structures', 'algorithms'
+  'spring cloud', 'hibernate', 'jpa', 'microservices', 'distributed systems', 'rest api', 'rest apis',
+  'html', 'css', 'tailwind', 'sass', 'redux', 'graphql', 'sql', 'mysql', 'postgresql', 'couchbase',
+  'mongodb', 'redis', 'kafka', 'apache kafka', 'camunda', 'elasticsearch', 'docker', 'kubernetes',
+  'aws', 'cloudwatch', 's3', 'azure', 'gcp', 'ci/cd', 'git', 'github', 'jenkins', 'helm', 'nexus',
+  'artifactory', 'jfrog', 'maven', 'gradle', 'junit', 'mockito', 'postman', 'jira', 'cursor',
+  'intellij idea', 'linux', 'shell scripting', 'agile', 'scrum', 'playwright', 'puppeteer',
+  'selenium', 'jest', 'cypress', 'data structures', 'algorithms'
 ];
 
 /**
@@ -49,7 +52,13 @@ export async function parseResume(filePath: string): Promise<ParsedResume> {
   let portfolio: string | undefined;
   if (portfolioMatch) {
     const matchedUrl = portfolioMatch[0];
-    if (!matchedUrl.includes('linkedin.com') && !matchedUrl.includes('github.com')) {
+    if (
+      !matchedUrl.includes('linkedin.com') &&
+      !matchedUrl.includes('github.com') &&
+      !matchedUrl.includes('gmail.com') &&
+      !matchedUrl.includes('yahoo.com') &&
+      !matchedUrl.includes('outlook.com')
+    ) {
       portfolio = matchedUrl.startsWith('http') ? matchedUrl : `https://${matchedUrl}`;
     }
   }

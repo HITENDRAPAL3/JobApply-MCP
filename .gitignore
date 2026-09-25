@@ -3,3 +3,12 @@ screenshots/
 *.log
 test-server.js
 .DS_Store
+myresume/
+*.pdf
+user_profile.json
+.chrome_profile/
+.env
+.env.*
+*.mjs
+*.bat
+

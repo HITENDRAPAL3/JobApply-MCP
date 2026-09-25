@@ -1,36 +1,61 @@
 import { chromium } from 'playwright';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+function getProjectRoot() {
+    let curr = __dirname;
+    while (curr !== path.dirname(curr)) {
+        if (fs.existsSync(path.join(curr, 'package.json'))) {
+            return curr;
+        }
+        curr = path.dirname(curr);
+    }
+    return path.resolve(__dirname, '..');
+}
 export class BrowserManager {
     browser = null;
     context = null;
     page = null;
     screenshotsDir;
     constructor() {
-        this.screenshotsDir = path.resolve(process.cwd(), 'screenshots');
+        const root = getProjectRoot();
+        this.screenshotsDir = path.join(root, 'screenshots');
         if (!fs.existsSync(this.screenshotsDir)) {
             fs.mkdirSync(this.screenshotsDir, { recursive: true });
         }
     }
     /**
-     * Launches Chromium in visible (headful) mode by default so user can monitor.
+     * Launches Google Chrome on the user's desktop in visible (headful) mode with a persistent
+     * user profile directory (.chrome_profile). This preserves cookies, active sessions, and
+     * saved passwords across applications without interfering with other windows.
      */
     async launch(headless = false) {
-        if (this.browser && this.page) {
+        if (this.context && this.page && !this.page.isClosed()) {
             return;
         }
-        this.browser = await chromium.launch({
+        const root = getProjectRoot();
+        const userDataDir = path.join(root, '.chrome_profile');
+        if (!fs.existsSync(userDataDir)) {
+            fs.mkdirSync(userDataDir, { recursive: true });
+        }
+        this.context = await chromium.launchPersistentContext(userDataDir, {
+            channel: 'chrome',
             headless,
+            viewport: null, // Maximized desktop window
             args: [
                 '--start-maximized',
                 '--disable-blink-features=AutomationControlled'
-            ]
-        });
-        this.context = await this.browser.newContext({
-            viewport: null, // Adapts to maximized window
+            ],
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
         });
-        this.page = await this.context.newPage();
+        const pages = this.context.pages();
+        this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
+        // Track active page if new tab/window is opened
+        this.context.on('page', newPage => {
+            this.page = newPage;
+        });
     }
     /**
      * Navigates to the specified job portal URL.
@@ -55,31 +80,48 @@ export class BrowserManager {
             throw new Error('Browser is not open. Call open_job_portal first.');
         }
         const page = this.page;
-        // Check if form is already visible on page
-        const formInputCount = await page.locator('input:not([type="hidden"]), textarea, select').count();
-        if (formInputCount >= 3) {
-            return { clicked: false, status: 'Application form is already present on the page.' };
-        }
         // Common selectors for Apply buttons
         const applyButtonSelectors = [
             'a:has-text("Apply Now")',
             'button:has-text("Apply Now")',
             'a:has-text("Apply for this job")',
             'button:has-text("Apply for this job")',
-            'a:has-text("Apply")',
-            'button:has-text("Apply")',
             'a[data-qa="apply-button"]',
             'button[data-qa="apply-button"]',
+            'a[href*="/apply"]',
             'a[href*="apply"]',
+            'a:has-text("Apply")',
+            'button:has-text("Apply")',
             'button:has-text("I\'m interested")'
         ];
         for (const selector of applyButtonSelectors) {
             const loc = page.locator(selector).first();
             if (await loc.isVisible().catch(() => false)) {
+                // Track possible new window/tab popup
+                let newPagePromise = Promise.resolve(null);
+                if (this.context) {
+                    newPagePromise = this.context.waitForEvent('page', { timeout: 4000 }).catch(() => null);
+                }
+                await loc.scrollIntoViewIfNeeded().catch(() => { });
                 await loc.click();
+                const popup = await newPagePromise;
+                if (popup) {
+                    this.page = popup;
+                    await this.page.waitForLoadState('domcontentloaded').catch(() => { });
+                    await this.page.waitForTimeout(2500);
+                    return {
+                        clicked: true,
+                        status: `Clicked apply button matching "${selector}" and switched to new application tab: ${this.page.url()}`
+                    };
+                }
                 await page.waitForTimeout(2500);
                 return { clicked: true, status: `Clicked apply button matching: ${selector}` };
             }
+        }
+        // Check if form is already visible on page
+        const formInputCount = await page.locator('input:not([type="hidden"]), textarea, select').count();
+        if (formInputCount >= 3) {
+            return { clicked: false, status: 'Application form is already present on the page.' };
         }
         return { clicked: false, status: 'No distinct Apply button found. Already at destination or custom layout.' };
     }
@@ -237,22 +279,16 @@ export class BrowserManager {
                     });
                     continue;
                 }
-                if (typeof mapping.value === 'boolean') {
-                    if (mapping.value) {
-                        await locator.check({ force: true });
-                    }
-                    else {
-                        await locator.uncheck({ force: true });
-                    }
-                }
-                else if (mapping.type === 'select') {
-                    // Attempt select by label, value, or index
-                    const val = String(mapping.value);
+                if (typeof mapping.value === 'boolean' || mapping.type === 'radio' || mapping.type === 'checkbox') {
                     try {
-                        await locator.selectOption({ label: val });
+                        await page.keyboard.press('Escape').catch(() => { });
+                        await locator.evaluate((el) => el.click());
                     }
                     catch {
-                        await locator.selectOption({ value: val });
+                        const id = await locator.getAttribute('id').catch(() => null);
+                        if (id) {
+                            await page.locator(`label[for="${id}"]`).click({ force: true }).catch(() => { });
+                        }
                     }
                 }
                 else if (mapping.type === 'file') {
@@ -262,10 +298,42 @@ export class BrowserManager {
                     }
                 }
                 else {
-                    // Standard text / email / tel / textarea
-                    await locator.click();
-                    await locator.fill('');
-                    await locator.fill(String(mapping.value));
+                    // Check if this is a select or custom dropdown widget (like Workday selectinput)
+                    const tagName = await locator.evaluate((el) => el.tagName.toLowerCase()).catch(() => '');
+                    const val = String(mapping.value);
+                    if (tagName === 'select') {
+                        try {
+                            await locator.selectOption({ label: val });
+                        }
+                        catch {
+                            await locator.selectOption({ value: val });
+                        }
+                    }
+                    else {
+                        // Text, search combobox, or Workday custom select widget
+                        await page.keyboard.press('Escape').catch(() => { });
+                        await locator.scrollIntoViewIfNeeded().catch(() => { });
+                        await locator.click({ force: true }).catch(async () => {
+                            await locator.evaluate((el) => el.click());
+                        });
+                        await locator.fill('');
+                        await locator.fill(val);
+                        await page.waitForTimeout(400);
+                        // If it is a searchable dropdown (Workday / ATS), check for popup options
+                        const optionItem = page
+                            .locator('[data-automation-id="menuItem"], [role="option"], [data-uxi-widget-type="selectinputlistitem"], li.css-j8lfa5')
+                            .filter({ hasText: val })
+                            .first();
+                        if (await optionItem.isVisible({ timeout: 1500 }).catch(() => false)) {
+                            await optionItem.click({ force: true });
+                            await page.waitForTimeout(300);
+                        }
+                        else {
+                            // Try pressing Enter to commit autocomplete
+                            await page.keyboard.press('Enter');
+                        }
+                        await page.keyboard.press('Escape').catch(() => { });
+                    }
                 }
                 results.push({
                     selector: mapping.selector,
@@ -284,6 +352,51 @@ export class BrowserManager {
             }
         }
         return { results, resumeUploaded };
+    }
+    /**
+     * Clicks 'Save and Continue', 'Next', or 'Continue' buttons to advance multi-step wizard.
+     */
+    async advanceStep() {
+        if (!this.page) {
+            throw new Error('Browser is not open. Call open_job_portal first.');
+        }
+        const page = this.page;
+        const continueLocators = [
+            'button[data-automation-id="bottom-navigation-next-button"]',
+            'button:has-text("Save and Continue")',
+            'button:has-text("Save & Continue")',
+            'button:has-text("Next")',
+            'button:has-text("Continue")',
+            'a:has-text("Save and Continue")',
+            'a:has-text("Next")'
+        ];
+        let clicked = false;
+        for (const selector of continueLocators) {
+            const btn = page.locator(selector).first();
+            if (await btn.isVisible().catch(() => false)) {
+                await btn.scrollIntoViewIfNeeded().catch(() => { });
+                await btn.click({ force: true }).catch(async () => {
+                    await btn.evaluate((el) => el.click());
+                });
+                clicked = true;
+                break;
+            }
+        }
+        if (!clicked) {
+            return {
+                success: false,
+                currentUrl: page.url(),
+                message: 'Could not find a Next/Save and Continue button on the current page.'
+            };
+        }
+        await page.waitForLoadState('domcontentloaded').catch(() => { });
+        await page.waitForTimeout(3000);
+        return {
+            success: true,
+            currentUrl: page.url(),
+            stepTitle: await page.title(),
+            message: 'Advanced to next step successfully.'
+        };
     }
     /**
      * Captures a screenshot and provides a comprehensive inspection summary.
